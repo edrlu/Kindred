@@ -238,17 +238,61 @@
     active = run;
     const log = (m) => cb.onLog && cb.onLog(m);
 
-    let tab;
+    const cfg = await P.getConfig().catch(() => ({}));
+    const useCloud = Boolean(
+      cfg.autopilotCloud &&
+      cfg.browserbaseKey && cfg.browserbaseKey.trim() &&
+      window.KindredAutopilotCloud
+    );
+
+    // A "driver" gives the loop one interface for both backends:
+    //   • local  → the on-page content script (acts on the user's tab)
+    //   • cloud  → a Browserbase session driven over CDP (no backend)
+    // Both answer the same KINDRED_AUTOPILOT_* messages, so the loop below is
+    // identical for either one.
+    let tab = null;
+    let driver = null;
     try {
-      tab = await getActiveTab();
-      if (!tab || tab.id == null) throw new Error("No active tab for Autopilot.");
-      if (RESTRICTED.test(tab.url || "")) throw new Error("Kindred can't drive this kind of page.");
       if (!(await P.hasAnthropic())) throw new Error("Add an Anthropic (Claude) API key in Settings to use Autopilot.");
 
-      await ensureScript(tab.id, "src/content/autopilot.js");
-      await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Getting started…", running: true });
+      if (useCloud) {
+        // Start the cloud browser at the user's current page (for context),
+        // then hand control to the loop. The Live View lets them log in.
+        let startUrl = "about:blank";
+        try {
+          const t = await getActiveTab();
+          if (t && t.url && !RESTRICTED.test(t.url)) startUrl = t.url;
+        } catch { /* ignore */ }
 
-      // Stop button on the page.
+        log("Starting a cloud browser…");
+        const cloud = await window.KindredAutopilotCloud.create({
+          apiKey: cfg.browserbaseKey.trim(),
+          projectId: (cfg.browserbaseProjectId || "").trim(),
+          startUrl,
+          onLog: (m) => log(m),
+        });
+        driver = {
+          ready: async () => {},
+          send: (m) => cloud.handle(m),
+          stop: () => cloud.stop(),
+        };
+        log("Cloud browser ready — log in or take over in the live view whenever you like.");
+      } else {
+        tab = await getActiveTab();
+        if (!tab || tab.id == null) throw new Error("No active tab for Autopilot.");
+        if (RESTRICTED.test(tab.url || "")) throw new Error("Kindred can't drive this kind of page.");
+        driver = {
+          ready: () => ensureScript(tab.id, "src/content/autopilot.js"),
+          send: (m) => send(tab.id, m),
+          stop: () => {},
+        };
+      }
+
+      await driver.ready();
+      await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: "Getting started…", running: true });
+
+      // Stop button on the page (local executor). Cloud is stopped from the
+      // side panel; either way run.stopped ends the loop.
       let pageStop = false;
       const stopWatcher = nextEvent(
         (m) => m.type === "KINDRED_AUTOPILOT_EVENT" && m.event === "stop",
@@ -262,8 +306,8 @@
       for (let step = 1; step <= MAX_STEPS; step++) {
         if (run.stopped) break;
 
-        await ensureScript(tab.id, "src/content/autopilot.js");
-        const obs = await send(tab.id, { type: "KINDRED_AUTOPILOT_OBSERVE" });
+        await driver.ready();
+        const obs = await driver.send({ type: "KINDRED_AUTOPILOT_OBSERVE" });
         if (!obs) { log("Couldn't read the page; stopping."); break; }
 
         const decision = await P.claudeJSON(
@@ -293,7 +337,7 @@
         const say = decision.say || "Working…";
 
         if (decision.done || a.type === "done") {
-          await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: say, running: false });
+          await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: say, running: false });
           log("✓ " + say);
           await speak(say, run);
           cb.onDone && cb.onDone(say);
@@ -302,12 +346,12 @@
 
         // Safety gate.
         if (decision.risk) {
-          await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Waiting for your OK…", running: true });
+          await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: "Waiting for your OK…", running: true });
           const ok = cb.onConfirm ? await cb.onConfirm(say) : false;
           if (run.stopped) break;
           if (!ok) {
             log("✋ You declined: " + say);
-            await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Stopped — you declined that step.", running: false });
+            await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: "Stopped — you declined that step.", running: false });
             cb.onDone && cb.onDone("Stopped at your request.");
             return;
           }
@@ -315,10 +359,10 @@
 
         log(`Step ${step}: ${say}`);
         cb.onAction && cb.onAction({ step, say, action: a });
-        await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: say, running: true });
+        await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: say, running: true });
         await speak(say, run);
 
-        const res = await send(tab.id, { type: "KINDRED_AUTOPILOT_ACT", action: a });
+        const res = await driver.send({ type: "KINDRED_AUTOPILOT_ACT", action: a });
         history.push(say + (res && res.ok ? "" : " (failed)"));
 
         if (a.type === "navigate") {
@@ -329,17 +373,20 @@
       }
 
       if (run.stopped) {
-        await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Stopped.", running: false });
+        await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: "Stopped.", running: false });
         log(pageStop ? "Stopped from the page." : "Stopped.");
         cb.onDone && cb.onDone("Autopilot stopped.");
       } else {
-        await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Reached my step limit — pausing.", running: false });
+        await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: "Reached my step limit — pausing.", running: false });
         cb.onDone && cb.onDone("Reached the step limit and paused for safety.");
       }
     } catch (err) {
       cb.onError && cb.onError(err);
-      try { if (tab?.id != null) await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Something went wrong — stopped.", running: false }); } catch { /* ignore */ }
+      try { if (driver) await driver.send({ type: "KINDRED_AUTOPILOT_STATUS", text: "Something went wrong — stopped.", running: false }); } catch { /* ignore */ }
     } finally {
+      // Cloud: closes the Browserbase session and removes the live view.
+      // Local: a no-op (the panel clears the on-page overlay separately).
+      try { if (driver && driver.stop) await driver.stop(); } catch { /* ignore */ }
       if (active === run) active = null;
     }
   }
