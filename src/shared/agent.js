@@ -75,10 +75,15 @@
   }
 
   /* ---------- shared run state (so STOP works across features) ---------- */
-  let active = null; // { kind, stopped }
+  let active = null; // { kind, stopped, wake? }
 
   function stop() {
-    if (active) active.stopped = true;
+    if (active) {
+      active.stopped = true;
+      // Wake any loop that's blocked waiting on the user (Guide Me) so the
+      // stop takes effect immediately instead of hanging until a timeout.
+      if (typeof active.wake === "function") active.wake();
+    }
   }
   function isRunning() {
     return Boolean(active && !active.stopped);
@@ -109,6 +114,19 @@
     const run = { kind: "guide", stopped: false };
     active = run;
     const log = (m) => cb.onLog && cb.onLog(m);
+
+    // Page-side STOP — mirrors Autopilot. A STOP control in guide.js posts
+    // KINDRED_GUIDE_EVENT {event:"stop"}. We both flag the run AND resolve a
+    // wake signal, so a loop that's currently blocked waiting on the user
+    // breaks out immediately instead of hanging until the 120s timeout.
+    let wake = null;
+    const stopSignal = new Promise((resolve) => { wake = resolve; });
+    run.wake = wake; // lets the shared stop() (side-panel Stop) wake us too
+    let pageStop = false;
+    nextEvent(
+      (m) => m.type === "KINDRED_GUIDE_EVENT" && m.event === "stop",
+      24 * 60 * 60 * 1000
+    ).then(() => { pageStop = true; run.stopped = true; if (wake) wake(); });
 
     try {
       const tab = await getActiveTab();
@@ -177,20 +195,26 @@
           log("(That control moved — follow the written step, then press Next.)");
         }
 
-        // Advance when the user performs the action OR presses "Next".
+        // Advance when the user performs the action OR presses "Next" — but
+        // also break out the moment a STOP arrives (page button or side panel).
         const acted = nextEvent(
           (m) => m.type === "KINDRED_GUIDE_EVENT" && m.event === "acted",
           120000
         );
         const next = cb.onConfirmAdvance ? cb.onConfirmAdvance() : Promise.resolve(null);
-        await Promise.race([acted, next]);
+        await Promise.race([acted, next, stopSignal]);
 
         if (run.stopped) break;
         await sleep(700); // let any page change settle before re-scanning
       }
 
-      if (!run.stopped) {
-        await send(tab.id, { type: "KINDRED_GUIDE_CLEAR" });
+      // Always clear the on-page overlay, then finish cleanly. Calling onDone
+      // on a stop mirrors Autopilot: it lets the panel mark the run finished
+      // and flip its Stop button to Close.
+      await send(tab.id, { type: "KINDRED_GUIDE_CLEAR" });
+      if (run.stopped) {
+        cb.onDone && cb.onDone(pageStop ? "Stopped from the page." : "Guide stopped.");
+      } else {
         cb.onDone && cb.onDone("That's as far as I can guide for now.");
       }
     } catch (err) {

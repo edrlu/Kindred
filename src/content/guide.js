@@ -55,6 +55,7 @@
   let ringEl = null; // pulsing ring over the target
   let tooltipEl = null; // instruction bubble
   let outlineEl = null; // crisp outline drawn around the target
+  let stopBtnEl = null; // always-available STOP button
 
   // Per-step bookkeeping so we can clean up between steps.
   let activeTarget = null;
@@ -242,6 +243,26 @@
       #${WRAP_ID} .kindred-tip-dot{width:10px;height:10px;border-radius:50%;
         background:#2383e2;display:inline-block;}
 
+      /* Always-available STOP control so the user can end guidance at any time.
+         The bar is click-through; only the button itself accepts clicks (the
+         whole overlay is pointer-events:none). Mirrors Autopilot's page STOP. */
+      #${WRAP_ID} .kindred-stop-bar{position:fixed;left:50%;bottom:22px;
+        transform:translateX(-50%);z-index:5;pointer-events:none;
+        display:flex;justify-content:center;
+        max-width:calc(100vw - 28px);}
+      #${WRAP_ID} .kindred-stop{pointer-events:auto;cursor:pointer;
+        appearance:none;-webkit-appearance:none;font-family:inherit;
+        display:inline-flex;align-items:center;gap:8px;
+        font-size:16px;font-weight:700;letter-spacing:.01em;color:#2383e2;
+        background:#ffffff;border:2px solid #2383e2;border-radius:999px;
+        padding:11px 22px;margin:0;line-height:1.1;
+        box-shadow:0 6px 20px rgba(55,53,47,.20);
+        transition:background .12s ease,color .12s ease;}
+      #${WRAP_ID} .kindred-stop:hover{background:#2383e2;color:#ffffff;}
+      #${WRAP_ID} .kindred-stop:disabled{opacity:.6;cursor:default;
+        background:#f4f6fb;color:#2383e2;}
+      #${WRAP_ID} .kindred-stop-x{font-size:18px;line-height:1;font-weight:800;}
+
       @media (prefers-reduced-motion: reduce){
         #${WRAP_ID} .kindred-cursor.kindred-glide{transition:none!important;}
         #${WRAP_ID} .kindred-ring{animation:none!important;}
@@ -280,10 +301,30 @@
         <circle cx="9" cy="5.5" r="2.4" fill="#2383e2"/>
       </svg>`;
 
+    // STOP control — the page-side way to end guidance. Its click posts
+    // KINDRED_GUIDE_EVENT {event:"stop"}, which the side-panel planner watches
+    // for (exactly like Autopilot's banner STOP button).
+    const stopBar = document.createElement("div");
+    stopBar.className = "kindred-stop-bar";
+    stopBtnEl = document.createElement("button");
+    stopBtnEl.type = "button";
+    stopBtnEl.className = "kindred-stop";
+    stopBtnEl.setAttribute("aria-label", "Stop guiding me");
+    const stopX = document.createElement("span");
+    stopX.className = "kindred-stop-x";
+    stopX.textContent = "✕";
+    const stopLabel = document.createElement("span");
+    stopLabel.textContent = "Stop guiding";
+    stopBtnEl.appendChild(stopX);
+    stopBtnEl.appendChild(stopLabel);
+    stopBtnEl.addEventListener("click", onStopClick);
+    stopBar.appendChild(stopBtnEl);
+
     root.appendChild(outlineEl);
     root.appendChild(ringEl);
     root.appendChild(tooltipEl);
     root.appendChild(cursorEl);
+    root.appendChild(stopBar);
     (document.body || document.documentElement).appendChild(root);
   }
 
@@ -460,6 +501,17 @@
     }
   }
 
+  /* The STOP button on the overlay. Tell the side-panel planner to halt the
+     guide loop (the mirror of Autopilot's page STOP), and reflect the press
+     immediately so the user can see it took effect. */
+  function onStopClick() {
+    notify("stop");
+    if (stopBtnEl) {
+      stopBtnEl.disabled = true;
+      stopBtnEl.textContent = "Stopping…";
+    }
+  }
+
   /* Did the user interact with the element we're pointing at? We accept a click
      anywhere inside the target (or a node that resolves back to it via gid). */
   function hitsTarget(node) {
@@ -550,6 +602,9 @@
   function clear() {
     detachStepListeners();
     try {
+      if (stopBtnEl) stopBtnEl.removeEventListener("click", onStopClick);
+    } catch {}
+    try {
       if (root && root.parentNode) root.parentNode.removeChild(root);
     } catch {}
     try {
@@ -557,6 +612,7 @@
       if (style && style.parentNode) style.parentNode.removeChild(style);
     } catch {}
     root = cursorEl = ringEl = tooltipEl = outlineEl = null;
+    stopBtnEl = null;
     activeTarget = null;
     activeId = null;
     cursorPlaced = false;
