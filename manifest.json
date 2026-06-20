@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Kindred — AI Accessibility Assistant",
+  "short_name": "Kindred",
+  "version": "0.1.0",
+  "description": "Reshape any website into a simpler, safer, more personal version using natural language. Kindred is an adaptive accessibility layer for the web.",
+  "minimum_chrome_version": "114",
+  "action": {
+    "default_title": "Open Kindred",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "32": "assets/icons/icon32.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "permissions": ["sidePanel", "activeTab", "storage", "scripting", "tabs"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.deepgram.com/*",
+    "wss://api.deepgram.com/*",
+    "https://api.elevenlabs.io/*",
+    "https://api.browserbase.com/*",
+    "https://www.browserbase.com/*",
+    "https://api.resend.com/*",
+    "<all_urls>"
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/scam-watch.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
