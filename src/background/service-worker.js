@@ -103,7 +103,7 @@ async function scanTab(tabId, generation) {
     messages: [
       {
         role: "system",
-        content: 'You are a cautious scam detector. Examine this web page for phishing, fake urgency, requests for money or sensitive information, deceptive offers, impersonation, and risky payment instructions. Return ONLY JSON: {"verdict":"safe|caution|risk","findings":[{"level":"ok|warn|risk","text":"short plain-language reason"}],"matches":["exact short phrase copied from the visible page"]}. Include every strongly suspicious phrase you detect in matches (at most 12). Do not infer or rewrite phrases. Return an empty matches array when there are none.',
+        content: 'You are a high-precision scam detector. Your job is to flag ONLY clear, deliberate scams (phishing, account-suspension threats, requests to send money or credentials, untraceable-payment demands like gift cards/wire/crypto, fake prize/refund bait, impersonation of banks or officials). Precision matters far more than recall: when in doubt, do NOT flag. Most pages are legitimate — normal marketing, sales urgency ("limited time", "sale ends soon"), required form fields, login pages of real sites, news about scams, and ordinary calls-to-action are NOT scams and must return verdict "safe" with an empty matches array. Only put a phrase in "matches" if you are highly confident that exact phrase is part of an actual scam attempt. Return ONLY JSON: {"verdict":"safe|caution|risk","findings":[{"level":"ok|warn|risk","text":"short plain-language reason"}],"matches":["exact short phrase copied verbatim from the visible page"]}. Use "risk" only for clear scams, "caution" for genuinely ambiguous cases, "safe" otherwise. Copy phrases verbatim; never infer or rewrite. At most 8 matches. Empty matches array when none.',
       },
       { role: "user", content: `URL: ${page.url}\nTitle: ${page.title}\n\nVisible text:\n${page.text}` },
     ],
@@ -146,11 +146,18 @@ async function scanTab(tabId, generation) {
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content || "{}";
     const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
-    const matches = Array.isArray(parsed.matches)
-      ? parsed.matches.filter((item) => typeof item === "string" && item.length >= 5).slice(0, 12)
-      : [];
+    const verdict = ["safe", "caution", "risk"].includes(parsed.verdict)
+      ? parsed.verdict
+      : "safe";
+    // Trust the model's overall judgment: if it cleared the page as safe,
+    // don't highlight stray phrases. This keeps the on-page warnings precise.
+    const matches = verdict === "safe"
+      ? []
+      : (Array.isArray(parsed.matches)
+          ? parsed.matches.filter((item) => typeof item === "string" && item.length >= 5).slice(0, 8)
+          : []);
     const scan = {
-      verdict: ["safe", "caution", "risk"].includes(parsed.verdict) ? parsed.verdict : (matches.length ? "risk" : "safe"),
+      verdict,
       findings: Array.isArray(parsed.findings) ? parsed.findings.slice(0, 4) : [],
       matches,
     };

@@ -1,1 +1,22 @@
 .DS_Store
+
+# Local environment and credential files — never commit these.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Private keys and certificate bundles.
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Tool-specific local credentials.
+.claude/settings.local.json
+.vscode/settings.local.json
+credentials.json
+secrets.json

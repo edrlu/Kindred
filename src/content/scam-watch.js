@@ -17,11 +17,20 @@
   let fastScanTimer = null;
   let ignoreMutationsUntil = 0;
   let lastPageSignature = "";
+  // Each pattern requires TWO co-occurring scam signals within one sentence
+  // (a sensitive target AND an urgent threat/demand). This keeps the instant
+  // on-page warning fast while avoiding false alarms on ordinary words like
+  // "required" or routine marketing urgency. [^.?!] stops a match from
+  // spanning unrelated sentences.
   const FAST_SCAM_PATTERNS = [
-    /\burgent\s*:\s*.{0,90}\b(?:account|bank).{0,60}\b(?:closed|suspended|locked|verify)\b/i,
-    /\b(?:verify|confirm|update)\s+(?:your\s+)?(?:account|banking|payment).{0,90}\b(?:immediately|urgent|today|now)\b/i,
-    /\b(?:gift\s*card|wire\s*transfer|bitcoin|crypto(?:currency)?).{0,90}\b(?:urgent|immediately|today|now)\b/i,
-    /\b(?:final\s+warning|immediate\s+action|required|account\s+(?:will\s+be\s+)?(?:closed|suspended|locked))\b/i,
+    // "verify/confirm your account ... or it will be suspended/locked"
+    /\b(?:verify|confirm|update|reactivate|re-?activate)\b[^.?!]{0,70}\b(?:account|bank(?:ing)?|payment|card|paypal|login|password)\b[^.?!]{0,70}\b(?:suspend\w*|lock\w*|clos\w*|terminat\w*|deactivat\w*|within\s+\d+\s*(?:hours?|days?)|immediately|right\s+away)\b/i,
+    // "your account has been suspended ... click/verify to restore"
+    /\b(?:account|bank(?:ing)?|card|payment|paypal)\b[^.?!]{0,70}\b(?:suspend\w*|lock\w*|clos\w*|deactivat\w*|on\s+hold|been\s+limited)\b[^.?!]{0,70}\b(?:verify|confirm|click(?:\s+here)?|update|restore|reactivate|immediately)\b/i,
+    // Untraceable payment demanded under pressure
+    /\b(?:gift\s*cards?|wire\s*transfers?|bitcoin|crypto(?:currency)?|western\s*union|money\s*gram)\b[^.?!]{0,80}\b(?:urgent\w*|immediately|right\s+away|to\s+(?:avoid|prevent|unlock|release|restore))\b/i,
+    // Prize/refund bait that asks for a fee or personal/banking details
+    /\b(?:you(?:'ve|\s+have)\s+won|claim\s+your\s+(?:prize|reward|refund))\b[^.?!]{0,90}\b(?:fee|processing|verify|bank|card|account|details|click(?:\s+here)?)\b/i,
   ];
 
   function clearHighlights() {
