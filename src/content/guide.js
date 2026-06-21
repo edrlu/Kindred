@@ -110,7 +110,8 @@
       if (aria) return aria;
       const placeholder = clip(el.getAttribute("placeholder"));
       if (placeholder) return placeholder;
-      const value = clip(el.value);
+      const isPassword = el.tagName?.toLowerCase() === "input" && (el.getAttribute("type") || "text").toLowerCase() === "password";
+      const value = isPassword ? "" : clip(el.value);
       if (value) return value;
       const img = el.querySelector && el.querySelector("img[alt]");
       const alt = img && clip(img.getAttribute("alt"));

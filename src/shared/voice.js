@@ -287,7 +287,8 @@
    *   onFinal?:(text:string)=>void,
    *   onError?:(err:Error)=>void,
    *   onStart?:()=>void,
-   *   onStop?:()=>void
+   *   onStop?:()=>void,
+   *   continuous?:boolean
    * }} [opts]
    * @returns {Promise<{stop:()=>void}>}
    */
@@ -298,6 +299,7 @@
       onError: opts.onError || (() => {}),
       onStart: opts.onStart || (() => {}),
       onStop: opts.onStop || (() => {}),
+      continuous: Boolean(opts.continuous),
     };
 
     const cfg = await readConfig();
@@ -462,7 +464,7 @@
   function listenWebSpeech(cb) {
     const Rec = getSpeechRecognition();
     const recognition = new Rec();
-    recognition.continuous = false;
+    recognition.continuous = Boolean(cb.continuous);
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
@@ -498,6 +500,10 @@
     });
 
     recognition.addEventListener("end", () => {
+      if (cb.continuous && !stopped) {
+        try { recognition.start(); } catch { try { cb.onStop(); } catch { /* ignore */ } }
+        return;
+      }
       try { cb.onStop(); } catch { /* ignore */ }
     });
 

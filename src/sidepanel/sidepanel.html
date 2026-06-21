@@ -111,6 +111,25 @@
           <button class="primary primary--inline run-next" id="run-next" type="button" hidden>I did it — next step</button>
         </section>
 
+        <section class="voice-status" id="voice-status" hidden aria-live="polite">
+          <div class="voice-status__line">
+            <span class="voice-status__dot" id="voice-status-dot" aria-hidden="true"></span>
+            <span id="voice-status-label">Voice mode off</span>
+          </div>
+          <div class="voice-status__command" id="voice-current-command" hidden></div>
+        </section>
+
+        <section class="login-prompt" id="login-prompt" hidden aria-live="polite">
+          <div>
+            <h2 class="login-prompt__title" id="login-prompt-title">Matching login found</h2>
+            <p class="login-prompt__text" id="login-prompt-text"></p>
+          </div>
+          <div class="login-prompt__actions">
+            <button class="primary primary--inline" id="login-use" type="button">Use saved login</button>
+            <button class="link-btn" id="login-dismiss" type="button">Not now</button>
+          </div>
+        </section>
+
         <!-- quick actions -->
         <section aria-labelledby="actions-label">
           <h2 id="actions-label" class="label">Quick actions</h2>
@@ -318,6 +337,42 @@
           <div class="field">
             <label class="field__label" for="from-email">Send from <span class="field__opt">(optional)</span></label>
             <input id="from-email" class="input" type="text" placeholder="Kindred &lt;onboarding@resend.dev&gt;" autocomplete="off" spellcheck="false" />
+          </div>
+
+          <h3 class="label">Saved Logins</h3>
+
+          <div class="saved-logins" id="saved-logins">
+            <p class="field__hint">Saved usernames and passwords stay encrypted on this device. Kindred will ask before filling them and will not send them to AI models.</p>
+            <div class="saved-logins__list" id="saved-logins-list" aria-live="polite"></div>
+            <div class="saved-logins__form" id="saved-login-form">
+              <input id="login-id" type="hidden" />
+              <div class="field">
+                <label class="field__label" for="login-name">Website name</label>
+                <input id="login-name" class="input" type="text" placeholder="Amazon" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label class="field__label" for="login-domain">Website domain</label>
+                <input id="login-domain" class="input" type="text" placeholder="amazon.com" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label class="field__label" for="login-username">Email or username</label>
+                <input id="login-username" class="input" type="text" placeholder="name@example.com" autocomplete="username" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label class="field__label" for="login-password">Password</label>
+                <div class="input-wrap">
+                  <input id="login-password" class="input" type="password" placeholder="Password" autocomplete="new-password" spellcheck="false" />
+                  <button class="input__toggle" id="toggle-login-password" type="button" aria-label="Show password">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="saved-logins__actions">
+                <button class="primary primary--inline" id="save-login" type="button">Save login</button>
+                <button class="link-btn" id="cancel-login-edit" type="button" hidden>Cancel edit</button>
+                <span class="save-status" id="login-save-status" role="status" aria-live="polite"></span>
+              </div>
+            </div>
           </div>
 
           <div class="settings__actions">

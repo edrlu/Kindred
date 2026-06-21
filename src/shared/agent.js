@@ -75,10 +75,13 @@
   }
 
   /* ---------- shared run state (so STOP works across features) ---------- */
-  let active = null; // { kind, stopped }
+  let active = null; // { kind, stopped, controller }
 
   function stop() {
-    if (active) active.stopped = true;
+    if (!active) return;
+    active.stopped = true;
+    try { active.controller && active.controller.abort(); } catch { /* ignore */ }
+    try { V() && V().stopSpeaking && V().stopSpeaking(); } catch { /* ignore */ }
   }
   function isRunning() {
     return Boolean(active && !active.stopped);
@@ -88,7 +91,7 @@
     try {
       const cfg = await P.getConfig();
       if (!cfg.voiceEnabled || !V() || !text) return;
-      await V().speak(text).catch(() => {});
+      await V().speak(text, { signal: run && run.controller && run.controller.signal }).catch(() => {});
     } catch { /* voice is best-effort */ }
   }
 
@@ -106,7 +109,7 @@
      the panel (an alternative to physically doing the action).
      ========================================================= */
   async function guide(goal, cb = {}) {
-    const run = { kind: "guide", stopped: false };
+    const run = { kind: "guide", stopped: false, controller: new AbortController() };
     active = run;
     const log = (m) => cb.onLog && cb.onLog(m);
 
@@ -143,6 +146,7 @@
               "Pick the most obvious single element that advances the goal. Keep instructions concrete (mention the button/field by its visible label and where it is). " +
               "Never instruct them to enter passwords, card numbers, or personal/financial details unless their goal explicitly requires it. " +
               "When the goal is reached or no further on-page step is needed, set done=true, id=null, and put a warm closing line in instruction/say.",
+            signal: run.controller.signal,
           }
         );
 
@@ -194,7 +198,7 @@
         cb.onDone && cb.onDone("That's as far as I can guide for now.");
       }
     } catch (err) {
-      cb.onError && cb.onError(err);
+      if (!run.stopped && err?.name !== "AbortError") cb.onError && cb.onError(err);
     } finally {
       try {
         const tab = await getActiveTab();
@@ -210,7 +214,7 @@
      onConfirm(say) → Promise<boolean>  (gate for risky actions)
      ========================================================= */
   async function autopilot(task, cb = {}) {
-    const run = { kind: "autopilot", stopped: false };
+    const run = { kind: "autopilot", stopped: false, controller: new AbortController() };
     active = run;
     const log = (m) => cb.onLog && cb.onLog(m);
 
@@ -229,7 +233,11 @@
       const stopWatcher = nextEvent(
         (m) => m.type === "KINDRED_AUTOPILOT_EVENT" && m.event === "stop",
         24 * 60 * 60 * 1000
-      ).then(() => { pageStop = true; run.stopped = true; });
+      ).then(() => {
+        pageStop = true;
+        run.stopped = true;
+        try { run.controller.abort(); } catch { /* ignore */ }
+      });
       void stopWatcher;
 
       const history = [];
@@ -260,6 +268,7 @@
               "Take small, safe steps. Set risk=true for anything that spends money, places or confirms an order, submits a payment, sends a message/email, posts content, deletes data, or changes account or security settings. " +
               "Never place a final order, submit a payment, or send a message unless the user's task explicitly asked for it — and even then set risk=true so they confirm. " +
               "When the task is complete, set done=true with action.type 'done' and a friendly summary in say. If you're blocked, set done=true and explain in say.",
+            signal: run.controller.signal,
           }
         );
 
@@ -313,8 +322,10 @@
         cb.onDone && cb.onDone("Reached the step limit and paused for safety.");
       }
     } catch (err) {
-      cb.onError && cb.onError(err);
-      try { if (tab?.id != null) await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Something went wrong — stopped.", running: false }); } catch { /* ignore */ }
+      if (!run.stopped && err?.name !== "AbortError") {
+        cb.onError && cb.onError(err);
+        try { if (tab?.id != null) await send(tab.id, { type: "KINDRED_AUTOPILOT_STATUS", text: "Something went wrong — stopped.", running: false }); } catch { /* ignore */ }
+      }
     } finally {
       if (active === run) active = null;
     }

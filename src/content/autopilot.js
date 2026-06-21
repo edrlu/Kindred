@@ -101,7 +101,7 @@
         el.getAttribute("alt"),
         el.getAttribute("title"),
         el.getAttribute("name"),
-        tag === "input" ? el.value : "",
+        tag === "input" && (el.getAttribute("type") || "text").toLowerCase() !== "password" ? el.value : "",
       ];
       for (const candidate of candidates) {
         const text = clamp(candidate, LABEL_MAX);
@@ -120,7 +120,11 @@
         const opt = el.options && el.options[el.selectedIndex];
         return clamp(opt ? opt.text || opt.value : el.value, VALUE_MAX);
       }
-      if (tag === "input" || tag === "textarea") return clamp(el.value, VALUE_MAX);
+      if (tag === "input") {
+        const type = (el.getAttribute("type") || "text").toLowerCase();
+        return type === "password" ? "" : clamp(el.value, VALUE_MAX);
+      }
+      if (tag === "textarea") return clamp(el.value, VALUE_MAX);
       if (el.isContentEditable) return clamp(el.textContent, VALUE_MAX);
       return "";
     } catch {
